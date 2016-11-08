@@ -16,35 +16,39 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
     end
 
     # https://stefanwrobel.com/how-to-make-vagrant-performance-not-suck
+    host = RbConfig::CONFIG['host_os']
+    # Give VM 1/4 system memory & access to all cpu cores on the host
+    if host =~ /darwin/
+      cpus = `sysctl -n hw.ncpu`.to_i
+      # sysctl returns Bytes and we need to convert to MB
+      mem = `sysctl -n hw.memsize`.to_i / 1024 / 1024 / 4
+    elsif host =~ /linux/
+      cpus = `nproc`.to_i
+      # meminfo shows KB and we need to convert to MB
+      mem = `grep 'MemTotal' /proc/meminfo | sed -e 's/MemTotal://' -e 's/ kB//'`.to_i / 1024 / 4
+    else
+      # sorry Windows folks, I can't help you
+      cpus = 2
+      mem = 1024
+    end
+
     config.vm.provider "virtualbox" do |v|
-      host = RbConfig::CONFIG['host_os']
-
-      # Give VM 1/4 system memory & access to all cpu cores on the host
-      if host =~ /darwin/
-        cpus = `sysctl -n hw.ncpu`.to_i
-        # sysctl returns Bytes and we need to convert to MB
-        mem = `sysctl -n hw.memsize`.to_i / 1024 / 1024 / 4
-      elsif host =~ /linux/
-        cpus = `nproc`.to_i
-        # meminfo shows KB and we need to convert to MB
-        mem = `grep 'MemTotal' /proc/meminfo | sed -e 's/MemTotal://' -e 's/ kB//'`.to_i / 1024 / 4
-      else
-        # sorry Windows folks, I can't help you
-        cpus = 2
-        mem = 1024
-      end
-
       v.customize ["modifyvm", :id, "--memory", mem]
       v.customize ["modifyvm", :id, "--cpus", cpus]
 
-      # disable USB since it prevents the machine to start 
+      # disable USB since it prevents the machine to start
       # when not having installed the non-commercial USB extension
       v.customize ["modifyvm", :id, "--usb", "off"]
       v.customize ["modifyvm", :id, "--usbehci", "off"]
 
-      # enable linked clone support for faster provisioning 
+      # enable linked clone support for faster provisioning
       # (needs Vagrant >= 1.8.0)
       v.linked_clone = true
+    end
+
+    config.vm.provider :libvirt do |v|
+      v.memory = mem
+      v.cpus = cpus
     end
 
     config.vm.define "trusty" do |trusty|
@@ -61,7 +65,7 @@ Vagrant.configure(VAGRANTFILE_API_VERSION) do |config|
           sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt/ $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
           sudo apt-get install wget ca-certificates git
           wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
-          sudo apt-get update && sudo apt-get install -yq --no-install-recommends postgresql-9.5 postgresql-client-9.5 postgresql-contrib-9.5 postgresql-server-dev-9.5 
+          sudo apt-get update && sudo apt-get install -yq --no-install-recommends postgresql-9.5 postgresql-client-9.5 postgresql-contrib-9.5 postgresql-server-dev-9.5
           # install Redis
           sudo apt-get install -yq --no-install-recommends redis-server libhiredis-dev
           # install PHP
